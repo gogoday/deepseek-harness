@@ -196,9 +196,13 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   private watchNavigation(): () => void {
     let initial: 'waiting' | 'connecting' | 'done' = 'waiting'
+    let previousArchived: readonly SessionId[] = []
     const reconcile = (): void => {
       if (this.lifetime.signal.aborted) return
-      if (this.clearArchivedCurrent()) return
+      const archived = this.workspaces.list.getSnapshot().archivedSessionIds
+      const previous = previousArchived
+      previousArchived = archived
+      if (this.clearNewlyArchivedCurrent(previous, archived)) return
       if (initial !== 'waiting') return
       const workspace = this.workspaces.list.getSnapshot()
       const sessions = this.sessions.list.getSnapshot()
@@ -238,11 +242,10 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     }
   }
 
-  /** @returns true when an archived current selection was cleared. */
-  private clearArchivedCurrent(): boolean {
+  /** Explicitly opening an archived Session remains allowed; only a new archive clears selection. */
+  private clearNewlyArchivedCurrent(previous: readonly SessionId[], archived: readonly SessionId[]): boolean {
     const current = this.sessions.list.getSnapshot().current
-    if (current === undefined
-      || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false
+    if (current === undefined || previous.includes(current) || !archived.includes(current)) return false
     this.sessions.clear()
     return true
   }

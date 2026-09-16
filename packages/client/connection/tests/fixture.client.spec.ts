@@ -194,6 +194,7 @@ interface FixtureWorkspaceRequests {
     readonly beforeSessionId?: SessionId
   }
   archiveSession: { readonly sessionId: SessionId }
+  unarchiveSession: { readonly sessionId: SessionId }
 }
 
 interface FixtureWorkspaceValues {
@@ -203,6 +204,7 @@ interface FixtureWorkspaceValues {
   insertBefore: { readonly workspaceIds: readonly WorkspaceId[] }
   insertSessionBefore: { readonly workspace: FixtureWorkspaceView }
   archiveSession: { readonly archivedSessionIds: readonly SessionId[] }
+  unarchiveSession: { readonly archivedSessionIds: readonly SessionId[] }
 }
 
 type FixtureWorkspaceApi = {
@@ -471,6 +473,7 @@ function createWorkspaceApi(rpc: ClientConnectionRpc): FixtureWorkspaceApi {
     insertBefore: (request, signal) => call('insertBefore', request, signal),
     insertSessionBefore: (request, signal) => call('insertSessionBefore', request, signal),
     archiveSession: (request, signal) => call('archiveSession', request, signal),
+    unarchiveSession: (request, signal) => call('unarchiveSession', request, signal),
   }
 }
 
@@ -483,6 +486,7 @@ function createWorkspaceClient(rpc: ClientConnectionRpc): FixtureWorkspaceClient
     insertBefore: (request, signal) => api.insertBefore(req(request), signal),
     insertSessionBefore: (request, signal) => api.insertSessionBefore(req(request), signal),
     archiveSession: (request, signal) => api.archiveSession(req(request), signal),
+    unarchiveSession: (request, signal) => api.unarchiveSession(req(request), signal),
   }
 }
 
@@ -1291,6 +1295,30 @@ describe('createFixtureApi', () => {
     if (!noop.result.ok) throw new Error('no-op move failed')
     expect(noop.result.value.workspace.sessionIds).toEqual(['fx-gamma', 'fx-beta', 'fx-alpha'])
     expect(noop.result.value.workspace.updatedAt).toBe(before)
+  })
+
+  it('workspace archive and restore publish idempotent sets without changing membership', async () => {
+    const api = createFixtureApi()
+    const abort = new AbortController()
+    const iterator = api.workspaceRemote.follow(abort.signal)[Symbol.asyncIterator]()
+    try {
+      const initial = await iterator.next()
+      if (initial.done || initial.value.type !== 'baseline') throw new Error('missing baseline')
+      await api.workspace.archiveSession(req({ sessionId: sid('fx-alpha') }))
+      expect((await iterator.next()).value).toEqual({ type: 'archived', archivedSessionIds: ['fx-alpha'] })
+      const restored = await api.workspace.unarchiveSession(req({ sessionId: sid('fx-alpha') }))
+      expect(restored.result).toEqual({ ok: true, value: { archivedSessionIds: [] } })
+      expect((await iterator.next()).value).toEqual({ type: 'archived', archivedSessionIds: [] })
+      await api.workspace.unarchiveSession(req({ sessionId: sid('fx-alpha') }))
+      await api.workspace.unarchiveSession(req({ sessionId: sid('unknown') }))
+      await api.workspace.archiveSession(req({ sessionId: sid('fx-beta') }))
+      expect((await iterator.next()).value).toEqual({ type: 'archived', archivedSessionIds: ['fx-beta'] })
+      const final = await readWorkspaceBaseline(api.workspaceRemote)
+      expect(final.items).toEqual(initial.value.value.items)
+    } finally {
+      abort.abort()
+      await iterator.return?.()
+    }
   })
 
   it('workspace.delete removes only the Workspace row and emits the removal frame', async () => {

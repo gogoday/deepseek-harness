@@ -254,6 +254,23 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Remove one session from the durable archive set without changing workspace
+   * membership. An unarchived or unknown id resolves without writing.
+   * @param sessionId - The session to restore.
+   * @returns resolution after durability; storage failures leave the archive unchanged.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+      })
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

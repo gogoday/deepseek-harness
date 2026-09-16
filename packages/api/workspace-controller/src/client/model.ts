@@ -61,6 +61,9 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   private orderRequestGeneration = 0
   /** Increments on stream orders so a later remote commit outranks an older unary echo. */
   private orderFrameGeneration = 0
+  /** Archive mutations share a queue; stream commits outrank pending unary echoes. */
+  private archiveOperationTail: Promise<unknown> = Promise.resolve()
+  private archiveFrameGeneration = 0
   /** Last complete order accepted from a baseline, increment, or current unary echo. */
   private committedOrder: WorkspaceId[] = []
   /** Host Workspace ids are never reused, so delayed data cannot resurrect a removed row. */
@@ -162,12 +165,36 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param sessionId - Session to archive.
    * @returns generated Remote result.
    */
-  async archiveSession(
+  archiveSession(
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
-    const result = await this.remote.archiveSession({ sessionId })
-    if (result.ok) this.installArchived(result.value.archivedSessionIds)
-    return result
+    return this.mutateArchive(() => this.remote.archiveSession({ sessionId }))
+  }
+
+  /**
+   * Idempotently restore one Session without changing Workspace membership.
+   * @param sessionId - Session to restore.
+   * @returns generated Remote result after reconciling the archive set.
+   */
+  unarchiveSession(
+    sessionId: WorkspaceArchiveSessionRequest['sessionId'],
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    return this.mutateArchive(() => this.remote.unarchiveSession({ sessionId }))
+  }
+
+  private mutateArchive(
+    operation: () => Promise<RemoteResult<WorkspaceArchiveValue>>,
+  ): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const pending = this.archiveOperationTail.then(async () => {
+      const frameGeneration = this.archiveFrameGeneration
+      const result = await operation()
+      if (result.ok && frameGeneration === this.archiveFrameGeneration) {
+        this.installArchived(result.value.archivedSessionIds)
+      }
+      return result
+    })
+    this.archiveOperationTail = pending.catch(() => undefined)
+    return pending
   }
 
   /**
@@ -177,7 +204,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   replaceBaseline(baseline: WorkspaceBaseline): void {
     this.orderFrameGeneration++
     this.installViews(baseline.items)
-    this.installArchived(baseline.archivedSessionIds)
+    this.replaceArchived(baseline.archivedSessionIds)
     this.state = 'idle'
     this.phase = 'ready'
     this.error = null
@@ -205,6 +232,7 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    * @param archivedSessionIds - complete Host-confirmed archive set.
    */
   replaceArchived(archivedSessionIds: WorkspaceArchiveValue['archivedSessionIds']): void {
+    this.archiveFrameGeneration++
     this.installArchived(archivedSessionIds)
   }
 

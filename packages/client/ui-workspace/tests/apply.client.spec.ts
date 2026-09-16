@@ -7,6 +7,8 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+import { ArchivedSessions, ArchivedSessionsIcon, type ArchivedSessionsInjected } from '../src/client/ArchivedSessions.tsx'
+import { resolveSlotLabel, type PropsRuntime, type PropsRenderSlots } from '@deepseek-ai/dsh-client-ui-slots'
 import { apply as hostApply } from '../src/index.ts'
 
 async function bench() {
@@ -19,6 +21,7 @@ async function bench() {
   }))
   const rename = vi.fn(async () => ({}))
   const insertSessionBefore = vi.fn(async () => ({}))
+  const unarchiveSession = vi.fn(async () => undefined)
   const open = vi.fn()
   const clear = vi.fn()
   const selectPanel = vi.fn()
@@ -43,6 +46,7 @@ async function bench() {
     delete: vi.fn(async () => undefined),
     insertBefore: vi.fn(async () => undefined),
     archiveSession: vi.fn(async () => undefined),
+    unarchiveSession,
     insertSessionBefore,
   } as never)
   ctx.provide('sessions', {
@@ -73,7 +77,7 @@ async function bench() {
   ctx.provide('locale', locale)
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
-    insertSessionBefore, open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
+    insertSessionBefore, unarchiveSession, open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
   }
 }
 
@@ -112,6 +116,51 @@ describe('ui-workspace apply', () => {
     await Promise.resolve()
     expect(after.slots.entries('conversation.hero.workspace')[0]!.component).toBe(WorkspacePicker)
     // expect(after.slots.entries('conversation.empty.workspace')[0]!.component).toBe(WorkspacePicker)
+  })
+
+  it('registers the archive panel across declaration and plugin lifetimes with live localized labels', async () => {
+    const b = await bench()
+    const fiber = b.ctx.plugin({ inject: [...inject], apply })
+    try {
+      await fiber.await()
+      expect(b.slots.entries('main')).toHaveLength(0)
+      const declarePanels = () => b.slots.register({
+        name: 'root',
+        children: {
+          main: { kind: 'keyed', scope: 'root' },
+          'sidebar.panellist': { kind: 'list', scope: 'root' },
+        },
+      }, (_props: PropsRuntime<'root'> & PropsRenderSlots<'main' | 'sidebar.panellist'>) => null)
+      const owner = declarePanels()
+      await Promise.resolve()
+      const panel = b.slots.entries('main')[0]!
+      expect(panel.component).toBe(ArchivedSessions)
+      expect(panel.options.key).toBe('archived-sessions')
+      const icon = b.slots.entries('sidebar.panellist')[0]!
+      expect(icon.component).toBe(ArchivedSessionsIcon)
+      expect(icon.options.id).toBe('archived-sessions')
+      expect(resolveSlotLabel(icon.options.label)).toBe('已归档')
+      b.locale.setLocale('en')
+      expect(resolveSlotLabel(icon.options.label)).toBe('Archived')
+      const actions = (panel.inject as () => ArchivedSessionsInjected)()
+      const openSession = vi.spyOn(b.ctx.uiWorkspace, 'openSession')
+      actions.open('session' as never)
+      expect(openSession).toHaveBeenCalledWith('session')
+      await actions.unarchive('missing' as never)
+      expect(b.unarchiveSession).toHaveBeenCalledWith('missing')
+      owner()
+      expect(b.slots.entries('main')).toHaveLength(0)
+      expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
+      declarePanels()
+      await Promise.resolve()
+      expect(b.slots.entries('main')).toHaveLength(1)
+      expect(b.slots.entries('sidebar.panellist')).toHaveLength(1)
+      await fiber.dispose()
+      expect(b.slots.entries('main')).toHaveLength(0)
+      expect(b.slots.entries('sidebar.panellist')).toHaveLength(0)
+    } finally {
+      await fiber.dispose()
+    }
   })
 
   it('routes browser actions and picker creation to the services', async () => {

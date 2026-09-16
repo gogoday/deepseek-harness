@@ -926,6 +926,34 @@ describe('registry-global session archive', () => {
     expect(result.registry.archivedSessionIds).toEqual(['gone', 'kept'])
   })
 
+  it('serializes archive and restore, preserves accounting, and durably skips repeated restores', async () => {
+    const dir = await makeDir('restore-home')
+    const result = await harness({ sessions: [header('first', dir, 100), header('second', dir, 200)] })
+    const workspace = result.registry.list()[0]!
+    const membership = [...workspace.sessionIds]
+    await Promise.all([
+      result.registry.archiveSession(SessionId('first')),
+      result.registry.archiveSession(SessionId('second')),
+      result.registry.unarchiveSession(SessionId('first')),
+    ])
+    expect(result.registry.archivedSessionIds).toEqual(['second'])
+    expect(storedState(result.pool).archivedSessionIds).toEqual(['second'])
+    expect(workspace.sessionIds).toEqual(membership)
+    const writes = result.changes.length
+    await result.registry.unarchiveSession(SessionId('first'))
+    await result.registry.unarchiveSession(SessionId('unknown'))
+    expect(result.changes).toHaveLength(writes)
+    result.pool.failNextWrites = 1
+    await expect(result.registry.unarchiveSession(SessionId('second'))).rejects.toThrow(/injected/)
+    expect(result.registry.archivedSessionIds).toEqual(['second'])
+    expect(result.changes).toHaveLength(writes)
+    await result.registry.unarchiveSession(SessionId('second'))
+    await result.fiber.dispose()
+    const restarted = await harness({ pool: result.pool, sessions: [header('first', dir, 100), header('second', dir, 200)] })
+    expect(restarted.registry.archivedSessionIds).toEqual([])
+    expect(restarted.registry.list()[0]?.sessionIds).toEqual(membership)
+  })
+
   it('accepts unaccounted and live sessions but rejects unknown ids without writing', async () => {
     const dir = await makeDir('archive-strays')
     const live = await makeDir('archive-live')

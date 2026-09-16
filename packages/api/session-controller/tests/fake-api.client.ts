@@ -272,6 +272,11 @@ export class FakeApiClient {
           payload,
           this.onWorkspaceArchiveSession(payload),
         ),
+        unarchiveSession: payload => this.record(
+          'workspace.unarchiveSession',
+          payload,
+          Promise.resolve(ok({ archivedSessionIds: [] })),
+        ),
         follow: signal => this.openWorkspace(signal),
       },
     }

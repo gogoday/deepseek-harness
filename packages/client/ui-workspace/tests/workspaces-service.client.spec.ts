@@ -138,6 +138,7 @@ class FakeWorkspaces implements IWorkspaces {
   declare readonly create: IWorkspaces['create']
   declare readonly rename: IWorkspaces['rename']
   declare readonly delete: IWorkspaces['delete']
+  declare readonly unarchiveSession: IWorkspaces['unarchiveSession']
   declare readonly insertBefore: IWorkspaces['insertBefore']
   declare readonly insertSessionBefore: IWorkspaces['insertSessionBefore']
 
@@ -539,6 +540,25 @@ describe('UiWorkspaceService', () => {
       workspaces: workspaceState([workspace('one', [current.id])], [current.id]),
     })
     expect(archived.sessions.clear).toHaveBeenCalledOnce()
+  })
+
+  it('opens archived content without restoring it and clears only a new archive transition', () => {
+    const archived = summary('archived')
+    const other = summary('other')
+    const b = bench({
+      sessions: sessionState([archived, other], other.id),
+      workspaces: workspaceState([], [archived.id]),
+    })
+
+    b.uiWorkspace.openSession(archived.id)
+    expect(b.sessions.list.getSnapshot().current).toBe(archived.id)
+    expect(b.workspaces.list.getSnapshot().archivedSessionIds).toEqual([archived.id])
+    b.workspaces.list.update(state => ({ ...state, archivedSessionIds: [archived.id, other.id] }))
+    expect(b.sessions.clear).not.toHaveBeenCalled()
+    b.workspaces.list.update(state => ({ ...state, archivedSessionIds: [other.id] }))
+    expect(b.sessions.list.getSnapshot().current).toBe(archived.id)
+    b.workspaces.list.update(state => ({ ...state, archivedSessionIds: [other.id, archived.id] }))
+    expect(b.sessions.clear).toHaveBeenCalledOnce()
   })
 
   it('forwards archive commands and preserves failures', async () => {

@@ -1,12 +1,7 @@
 /**
- * Workspace plugin, browser half. Two registrations: WorkspaceBrowser fills
- * the sidebar shell's `sidebar.workspaces` hole (the whole browsing region),
- * and WorkspacePicker fills the conversation hero's picker hole
- * (`conversation.hero.workspace` — both hero forms). Both read real Host
- * Workspaces through the global useWorkspaces hook, and each declares its
- * own `single` directory-flow child hole for the composed picker package's
- * client half (see the contract module doc). Export discipline:
- * packages/client/AGENTS.md.
+ * Workspace plugin, browser half: sidebar browsing, hero picking and the
+ * Archived main panel. Host data arrives through standard snapshot hooks;
+ * registrations follow their declaring slots' lifetimes.
  */
 import type { Context } from '@deepseek-ai/cordis'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
@@ -28,6 +23,7 @@ import { UiWorkspaceService } from './navigation.ts'
 import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
+import { ArchivedSessions, ArchivedSessionsIcon, type ArchivedSessionsInjected } from './ArchivedSessions.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
 export type { UiWorkspace } from './navigation.ts'
@@ -99,6 +95,22 @@ export function apply(ctx: Context): void {
   const openSession: WorkspaceBrowserInjected['open'] = (sessionId) => {
     uiWorkspace.openSession(sessionId)
   }
+  const archivedPanelId = 'archived-sessions'
+  const t = ctx.locale.bind(NS)
+  ctx.slots.inject('main', () => ctx.slots.register({
+    name: 'main',
+    key: archivedPanelId,
+    locale: NS,
+    inject: (): ArchivedSessionsInjected => ({
+      open: openSession,
+      unarchive: async (sessionId) => { await workspaces.unarchiveSession(sessionId) },
+    }),
+  }, ArchivedSessions))
+  ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+    name: 'sidebar.panellist',
+    id: archivedPanelId,
+    label: () => t('archived.title'),
+  }, ArchivedSessionsIcon))
   const browserInjected = (): WorkspaceBrowserInjected => ({
     // Explicit group actions keep their target; unscoped New Session inherits
     // the current Session Workspace before the recent-Workspace fallback.

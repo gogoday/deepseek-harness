@@ -1,0 +1,8 @@
+- region "Archived":
+  - heading "Archived" [level=1]
+  - paragraph: View archived sessions without unarchiving them. Unarchive a session to show it in the sidebar again.
+  - list:
+    - listitem:
+      - text: Archive target workspace-management-web-e2e workspace-management-web-e2e
+      - button "View"
+      - button "Unarchive"

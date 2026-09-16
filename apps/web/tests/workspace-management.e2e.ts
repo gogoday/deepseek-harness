@@ -31,6 +31,7 @@ const SNAPSHOT_DIR = fileURLToPath(new URL('../../../snapshots/web/workspace-man
 const SEED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/session.v3.jsonl', import.meta.url))
 const MODE = webSnapshotMode()
 const BROWSER_EXPECTED = join(SNAPSHOT_DIR, 'directory-browser.expected.md')
+const ARCHIVED_EXPECTED = fileURLToPath(new URL('./expected/workspace-management/archived.expected.md', import.meta.url))
 const SEED_ID = 'workspace-management-web-e2e'
 // Both waits exceed ui-primitives' 200ms POINTER_GRACE_MS. Keep them above
 // that value if the shared setting changes.
@@ -591,7 +592,7 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     expect(tripwire.pageErrors).toEqual([])
   }, 60_000)
 
-  it('archives the seeded session from its row menu, hiding it durably across reload', async () => {
+  it('archives across reload, views retained content, and restores the seeded session', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-ws-archive'))
     const initialRow = await seededSessionRow()
     // Selecting the seed hides any blank stray left by Workspace deletion,
@@ -638,6 +639,24 @@ describe('web e2e: workspace management (create / rename / flat view / hover aff
     // reappear if selection restore lands on another stray — not this test's
     // concern).
     expect(await sessionRow.count()).toBe(0)
+
+    await page.getByRole('button', { name: 'Archived', exact: true }).click()
+    const archivedPage = page.getByRole('region', { name: 'Archived', exact: true })
+    await archivedPage.getByText(title, { exact: true }).waitFor()
+    await compareOrRefreshGolden(ARCHIVED_EXPECTED,
+      await captureStableAria(page, '[role="region"][aria-label="Archived"], section[aria-label="Archived"]', scaffold.workspaceCwd), MODE)
+    await archivedPage.getByRole('button', { name: 'View', exact: true }).click()
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
+    expect([...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([SessionId(SEED_ID)])
+    expect(await sessionRow.count()).toBe(0)
+
+    await page.getByRole('button', { name: 'Archived', exact: true }).click()
+    await archivedPage.getByRole('button', { name: 'Unarchive', exact: true }).click()
+    await expect.poll(() => [...scaffold.ctx.workspaceRegistry.archivedSessionIds]).toEqual([])
+    await expect.poll(() => archivedPage.getByText(title, { exact: true }).count()).toBe(0)
+    await expect.poll(() => sessionRow.count(), { timeout: 10_000 }).toBe(1)
+    await sessionRow.click()
+    await page.getByText('DONE', { exact: true }).waitFor({ timeout: 15_000 })
     expect(tripwire.pageErrors).toEqual([])
   }, 90_000)
 

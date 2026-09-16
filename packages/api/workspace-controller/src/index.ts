@@ -7,6 +7,7 @@ import { DirectoryPickerController } from './directory-picker.ts'
 import { WorkspaceFeed } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
+  WorkspaceUnarchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
@@ -107,6 +108,17 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Restore a Session to grouping surfaces without changing workspace membership.
+   * Unarchived or unknown ids are idempotent no-ops; storage failures reject.
+   * @param request - Session identity to restore.
+   * @returns the complete durable archive set.
+   */
+  @Remote('unarchiveSession')
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.unarchiveSession(request)
   }
 
   /**

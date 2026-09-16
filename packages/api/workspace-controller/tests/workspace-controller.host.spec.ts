@@ -221,6 +221,14 @@ describe('WorkspaceController commands', () => {
       .resolves.toEqual({ archivedSessionIds: [session.id] })
     await expect(controller.archiveSession({ sessionId: SessionId('unknown') }))
       .rejects.toMatchObject({ code: 'session/not-found' })
+    await expect(controller.unarchiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [] })
+    await expect(controller.unarchiveSession({ sessionId: SessionId('unknown') }))
+      .resolves.toEqual({ archivedSessionIds: [] })
+    expect(workspace.sessionIds).toEqual([session.id])
+    const failure = new Error('archive storage unavailable')
+    vi.spyOn(ctx.workspaceRegistry, 'unarchiveSession').mockRejectedValueOnce(failure)
+    await expect(controller.unarchiveSession({ sessionId: session.id })).rejects.toBe(failure)
   })
 })
 
@@ -292,6 +300,8 @@ describe('WorkspaceController follow', () => {
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'archived', archivedSessionIds: [session.id],
     })
+    await controller.unarchiveSession({ sessionId: session.id })
+    await expect(nextFrame(iterator)).resolves.toEqual({ type: 'archived', archivedSessionIds: [] })
     await controller.delete({ workspaceId: second.workspace.workspaceId })
     await expect(nextFrame(iterator)).resolves.toEqual({
       type: 'order', workspaceIds: [first.workspace.workspaceId],

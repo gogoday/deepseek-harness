@@ -407,6 +407,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'sessionId', description: 'Session to archive.' }],
       },
       {
+        signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
+        description: 'Restore a Session without changing its Workspace membership; repeated calls are no-ops.',
+        parameters: [{ name: 'sessionId', description: 'Session to restore.' }],
+        returns: 'resolution after Host confirmation; rejects on storage or carrier failure.',
+      },
+      {
         signature: 'insertSessionBefore( workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId, ): Promise<WorkspaceView>',
         description: 'Move a Session within one Workspace account.',
         parameters: [{ name: 'workspaceId', description: 'owning Workspace.' }, { name: 'sessionId', description: 'Session to move.' }, { name: 'beforeSessionId', description: 'anchor Session; omitted appends.' }],

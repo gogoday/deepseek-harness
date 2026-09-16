@@ -115,6 +115,16 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
     return this.onArchiveSession(request)
   }
 
+  onUnarchiveSession: (
+    request: WorkspaceArchiveSessionRequest,
+  ) => Promise<RemoteResult<WorkspaceArchiveValue>> = () =>
+    Promise.resolve(remoteOk({ archivedSessionIds: [] }))
+
+  unarchiveSession(request: WorkspaceArchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    this.record('unarchiveSession', request)
+    return this.onUnarchiveSession(request)
+  }
+
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
 
   private record(method: string, request: unknown): void {
@@ -306,6 +316,47 @@ describe('ClientWorkspaceModel', () => {
     remote.onArchiveSession = request => Promise.resolve(remoteOk({ archivedSessionIds: [request.sessionId] }))
     await expect(model.archiveSession(sid('fresh'))).resolves.toMatchObject({ ok: true })
     expect(model.getSnapshot().archivedSessionIds).toEqual(['fresh'])
+  })
+
+  it('serializes archive and restore and retains later stream state over stale unary echoes', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model)
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onArchiveSession = () => gate.promise
+    const archive = model.archiveSession(sid('first'))
+    const restore = model.unarchiveSession(sid('first'))
+    await Promise.resolve()
+    expect(remote.calls.map(call => call.method)).toEqual(['archiveSession'])
+    model.replaceArchived([sid('other')])
+    gate.resolve(remoteOk({ archivedSessionIds: [sid('first')] }))
+    await archive
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['other'])
+    await restore
+    expect(model.getSnapshot().archivedSessionIds).toEqual([])
+
+    const restoreGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.onUnarchiveSession = () => restoreGate.promise
+    const pending = model.unarchiveSession(sid('other'))
+    await Promise.resolve()
+    baseline(model, [], [sid('newer')])
+    restoreGate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await pending
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['newer'])
+  })
+
+  it('retains archive state on failed restores and continues after a rejected carrier', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    remote.onUnarchiveSession = () => Promise.resolve(workspaceError(new RemoteError('gateway/internal', 'failed', {})))
+    await expect(model.unarchiveSession(sid('first'))).resolves.toMatchObject({ ok: false })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first'])
+    remote.onUnarchiveSession = () => Promise.reject(new Error('carrier failed'))
+    await expect(model.unarchiveSession(sid('first'))).rejects.toThrow('carrier failed')
+    remote.onUnarchiveSession = () => Promise.resolve(remoteOk({ archivedSessionIds: [] }))
+    await model.unarchiveSession(sid('first'))
+    expect(model.getSnapshot().archivedSessionIds).toEqual([])
   })
 
   it('keeps the newest row and places Workspaces missing from partial orders last', async () => {

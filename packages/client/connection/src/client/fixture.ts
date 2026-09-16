@@ -380,6 +380,7 @@ interface FixtureWorkspaceApi {
   insertBefore(request: WorkspaceInsertBeforeRequest): Promise<ConnectionRpcResult<WorkspaceOrderValue>>
   insertSessionBefore(request: WorkspaceInsertSessionBeforeRequest): Promise<ConnectionRpcResult<WorkspaceValue>>
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
+  unarchiveSession(request: WorkspaceArchiveSessionRequest): Promise<ConnectionRpcResult<WorkspaceArchiveValue>>
 }
 
 interface FixtureWorkspace {
@@ -3789,6 +3790,14 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       }
       return sessionOk({ workspace: workspaceSnapshot(workspace) })
     },
+    unarchiveSession: (request) => {
+      const index = archivedSessionIds.indexOf(request.sessionId)
+      if (index !== -1) {
+        archivedSessionIds.splice(index, 1)
+        emitWorkspace({ type: 'archived', archivedSessionIds: [...archivedSessionIds] })
+      }
+      return sessionOk({ archivedSessionIds: [...archivedSessionIds] })
+    },
     archiveSession: (request) => {
       if (summaryOf(request.sessionId) === undefined) {
         return sessionErr({
@@ -3996,6 +4005,7 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        case 'workspace/unarchiveSession': return workspaceApi.unarchiveSession(request as WorkspaceArchiveSessionRequest)
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }
