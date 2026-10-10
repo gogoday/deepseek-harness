@@ -8,6 +8,10 @@
   "engines": {
     "node": "^22.19.0 || >=24.0.0"
   },
+  "volta": {
+    "node": "22.19.0",
+    "pnpm": "11.28.5"
+  },
   "workspaces": [
     "vendor/*",
     "packages/*/*",
