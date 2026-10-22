@@ -20,10 +20,6 @@
     "apps/*",
     "website"
   ],
-  "volta": {
-    "node": "22.19.0",
-    "pnpm": "11.7.0"
-  },
   "scripts": {
     "prepare:primary-runtime": "tsx scripts/primary-runtime/prepare.ts",
     "build": "tsx scripts/build.ts",
